@@ -1,5 +1,3 @@
-Here is a `README.md` file for your project:
-
 ````markdown
 # Flight Info Bot and Data Fetcher
 
