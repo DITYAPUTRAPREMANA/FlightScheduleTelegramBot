@@ -5,12 +5,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Database configuration from environment variables
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASSWORD'),
     'database': os.getenv('DB_NAME'),
-    'port': int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else None
+    'port': int(os.getenv('DB_PORT'))
 }
 
 logger = logging.getLogger(__name__)
@@ -42,15 +43,9 @@ class FlightScheduleBot:
                 return None
             cursor = self.db_connection.cursor(dictionary=True)
             query = """
-                SELECT f.*,
-                       ap_origin.city as origin_city, ap_origin.name as origin_airport,
-                       ap_dest.city as dest_city, ap_dest.name as dest_airport,
-                       a.name as airline_name
-                FROM flights f
-                JOIN airports ap_origin ON f.origin_airport = ap_origin.code
-                JOIN airports ap_dest ON f.destination_airport = ap_dest.code
-                JOIN airlines a ON f.airline_id = a.id
-                WHERE f.flight_code = %s AND DATE(f.departure_time) = %s
+                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation
+                FROM flights
+                WHERE flightno = %s AND DATE(schedule) = %s
             """
             cursor.execute(query, (flight_code.upper(), date))
             result = cursor.fetchone()
@@ -68,16 +63,11 @@ class FlightScheduleBot:
                 return []
             cursor = self.db_connection.cursor(dictionary=True)
             query = """
-                SELECT f.flight_code, f.departure_time, f.arrival_time, f.status,
-                       ap_origin.city as origin_city, ap_dest.city as dest_city,
-                       a.name as airline_name
-                FROM flights f
-                JOIN airports ap_origin ON f.origin_airport = ap_origin.code
-                JOIN airports ap_dest ON f.destination_airport = ap_dest.code
-                JOIN airlines a ON f.airline_id = a.id
-                WHERE DATE(f.departure_time) = %s
-                ORDER BY f.departure_time
-                LIMIT 10
+                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation
+                FROM flights
+                WHERE DATE(schedule) = %s
+                ORDER BY schedule
+                LIMIT 20
             """
             cursor.execute(query, (date,))
             result = cursor.fetchall()
@@ -95,18 +85,15 @@ class FlightScheduleBot:
                 return []
             cursor = self.db_connection.cursor(dictionary=True)
             query = """
-                SELECT f.flight_code, f.departure_time, f.arrival_time, f.status,
-                       ap_origin.city as origin_city, ap_dest.city as dest_city,
-                       a.name as airline_name
-                FROM flights f
-                JOIN airports ap_origin ON f.origin_airport = ap_origin.code
-                JOIN airports ap_dest ON f.destination_airport = ap_dest.code
-                JOIN airlines a ON f.airline_id = a.id
-                WHERE f.origin_airport = %s AND f.destination_airport = %s 
-                AND DATE(f.departure_time) = %s
-                ORDER BY f.departure_time
+                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation
+                FROM flights
+                WHERE fromtolocation LIKE %s AND DATE(schedule) = %s
+                ORDER BY schedule
+                LIMIT 20
             """
-            cursor.execute(query, (origin.upper(), destination.upper(), date))
+            # Search for flights containing origin and destination in fromtolocation
+            route_pattern = f"%{origin}%{destination}%"
+            cursor.execute(query, (route_pattern, date))
             result = cursor.fetchall()
             cursor.close()
             return result

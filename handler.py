@@ -7,20 +7,12 @@ flight_bot = FlightScheduleBot()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = """
-🛫 *Selamat datang di Flight Schedule Bot!*
+🛫 *Selamat datang di Flight Info Bot!*
 
-Saya dapat membantu Anda mencari informasi jadwal penerbangan.
+Saya dapat membantu Anda mencari informasi jadwal penerbangan Secara real-time.
 
-*Cara penggunaan:*
-• `/flight [kode_penerbangan] [tanggal]` - Cari penerbangan spesifik
-• `/schedule [tanggal]` - Lihat jadwal penerbangan pada tanggal tertentu
-• `/route [asal] [tujuan] [tanggal]` - Cari penerbangan berdasarkan rute
+*Informasi Lebih Lengkap Gunakan:*
 • `/help` - Bantuan penggunaan
-
-*Contoh penggunaan:*
-`/flight GA123 2024-07-20`
-`/schedule 2024-07-20`
-`/route CGK DPS 2024-07-20`
     """
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
@@ -30,34 +22,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 *Perintah:*
 
-1️⃣ `/flight [kode_penerbangan] [tanggal]`
+1. `/flight [kode_penerbangan] [tanggal]`
    Mencari informasi penerbangan spesifik
-   Contoh: `/flight GA123 2024-07-20`
+   Contoh: `/flight QZ-590 2025-07-29`
 
-2️⃣ `/schedule [tanggal]`
+2. `/schedule [tanggal]`
    Melihat jadwal penerbangan pada tanggal tertentu
-   Contoh: `/schedule 2024-07-20`
-
-3️⃣ `/route [asal] [tujuan] [tanggal]`
-   Mencari penerbangan berdasarkan rute
-   Contoh: `/route CGK DPS 2024-07-20`
-
-4️⃣ `/help`
-   Menampilkan pesan bantuan ini
+   Contoh: `/schedule 2025-07-29`
 
 *Format:*
 • Tanggal: YYYY-MM-DD (tahun-bulan-hari)
-• Kode penerbangan: GA123, QZ456, dll.
+• Kode penerbangan: GA-123, QZ-456, dll.
 • Kode bandara: CGK, DPS, SUB, dll.
-
-*Kode bandara:*
-• CGK - Jakarta (Soekarno-Hatta)
-• DPS - Denpasar (Ngurah Rai)
-• SUB - Surabaya (Juanda)
-• YIA - Yogyakarta
-• PLM - Palembang
-• PKU - Pekanbaru
-• Dan lainnya...
     """
     await update.message.reply_text(help_message, parse_mode='Markdown')
 
@@ -66,7 +42,7 @@ async def flight_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Format salah!\n\n"
             "Gunakan: `/flight [kode_penerbangan] [tanggal]`\n"
-            "Contoh: `/flight GA123 2024-07-20`",
+            "Contoh: `/flight GA123 2024-01-15`",
             parse_mode='Markdown'
         )
         return
@@ -79,7 +55,7 @@ async def flight_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Format tanggal salah!\n\n"
             "Gunakan format: YYYY-MM-DD\n"
-            "Contoh: 2024-07-20"
+            "Contoh: 2024-01-15"
         )
         return
     await update.message.reply_text("🔍 Mencari informasi penerbangan...")
@@ -93,30 +69,16 @@ async def flight_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'Arrived': '🛬'
         }
         message = f"""
-✈️ *Informasi Penerbangan {flight_info['flight_code']}*
+    ✈️ *Informasi Penerbangan {flight_info['flightno']}*
 
-🏢 *Maskapai:* {flight_info['airline_name']}
-📅 *Tanggal:* {flight_info['departure_time'].strftime('%d %B %Y')}
+    🏢 *Operator:* {flight_info['operator']}
+    📅 *Jadwal:* {flight_info['schedule']}
+    ⏰ *Estimasi:* {flight_info['estimate']}
 
-🛫 *Keberangkatan:*
-• Bandara: {flight_info['origin_airport']} ({flight_info['origin_airport']})
-• Kota: {flight_info['origin_city']}
-• Waktu: {flight_info['departure_time'].strftime('%H:%M')} WIB
-
-🛬 *Kedatangan:*
-• Bandara: {flight_info['dest_airport']} ({flight_info['destination_airport']})
-• Kota: {flight_info['dest_city']}
-• Waktu: {flight_info['arrival_time'].strftime('%H:%M')} WIB
-
-💺 *Kapasitas:* {flight_info['capacity']} penumpang
-📊 *Status:* {status_emoji.get(flight_info['status'], '❓')} {flight_info['status']}
-        """
-        if flight_info.get('delay_minutes', 0) > 0:
-            message += f"\n⏰ *Delay:* {flight_info['delay_minutes']} menit"
-        if flight_info.get('gate'):
-            message += f"\n🚪 *Gate:* {flight_info['gate']}"
-        if flight_info.get('terminal'):
-            message += f"\n🏢 *Terminal:* {flight_info['terminal']}"
+    🚪 *Gate:* {flight_info['gatenumber']}
+    📊 *Status:* {status_emoji.get(flight_info['flightstat'], '❓')} {flight_info['flightstat']}
+    📍 *Rute:* {flight_info['fromtolocation']}
+            """
         await update.message.reply_text(message, parse_mode='Markdown')
     else:
         await update.message.reply_text(
@@ -129,7 +91,7 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Format salah!\n\n"
             "Gunakan: `/schedule [tanggal]`\n"
-            "Contoh: `/schedule 2024-07-20`",
+            "Contoh: `/schedule 2024-01-15`",
             parse_mode='Markdown'
         )
         return
@@ -140,7 +102,7 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Format tanggal salah!\n\n"
             "Gunakan format: YYYY-MM-DD\n"
-            "Contoh: 2024-07-20"
+            "Contoh: 2024-01-15"
         )
         return
     await update.message.reply_text("🔍 Mencari jadwal penerbangan...")
@@ -148,8 +110,6 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if flights:
         message = f"📅 *Jadwal Penerbangan {date_obj.strftime('%d %B %Y')}*\n\n"
         for i, flight in enumerate(flights, 1):
-            departure_time = flight['departure_time'].strftime('%H:%M')
-            arrival_time = flight['arrival_time'].strftime('%H:%M')
             status_emoji = {
                 'On Time': '✅',
                 'Delayed': '⏰',
@@ -157,9 +117,10 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'Departed': '🛫',
                 'Arrived': '🛬'
             }
-            message += f"{i}. *{flight['flight_code']}* - {flight['airline_name']}\n"
-            message += f"   {flight['origin_city']} ➡️ {flight['dest_city']}\n"
-            message += f"   🕐 {departure_time} - {arrival_time} | {status_emoji.get(flight['status'], '❓')} {flight['status']}\n\n"
+            message += f"{i}. *{flight['flightno']}* - {flight['operator']}\n"
+            message += f"   📍 {flight['fromtolocation']}\n"
+            message += f"   🕐 {flight['schedule']} | {status_emoji.get(flight['flightstat'], '❓')} {flight['flightstat']}\n"
+            message += f"   🚪 Gate: {flight['gatenumber']}\n\n"
         message += "💡 *Tip:* Gunakan `/flight [kode] [tanggal]` untuk detail lengkap"
         await update.message.reply_text(message, parse_mode='Markdown')
     else:
@@ -173,7 +134,7 @@ async def route_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Format salah!\n\n"
             "Gunakan: `/route [asal] [tujuan] [tanggal]`\n"
-            "Contoh: `/route CGK DPS 2024-07-20`",
+            "Contoh: `/route CGK DPS 2024-01-15`",
             parse_mode='Markdown'
         )
         return
@@ -186,7 +147,7 @@ async def route_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Format tanggal salah!\n\n"
             "Gunakan format: YYYY-MM-DD\n"
-            "Contoh: 2024-07-20"
+            "Contoh: 2024-01-15"
         )
         return
     await update.message.reply_text("🔍 Mencari penerbangan...")
@@ -195,8 +156,6 @@ async def route_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = f"🛫 *Penerbangan {origin} ➡️ {destination}*\n"
         message += f"📅 *Tanggal:* {date_obj.strftime('%d %B %Y')}\n\n"
         for i, flight in enumerate(flights, 1):
-            departure_time = flight['departure_time'].strftime('%H:%M')
-            arrival_time = flight['arrival_time'].strftime('%H:%M')
             status_emoji = {
                 'On Time': '✅',
                 'Delayed': '⏰',
@@ -204,9 +163,10 @@ async def route_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'Departed': '🛫',
                 'Arrived': '🛬'
             }
-            message += f"{i}. *{flight['flight_code']}* - {flight['airline_name']}\n"
-            message += f"   🕐 {departure_time} - {arrival_time}\n"
-            message += f"   📊 {status_emoji.get(flight['status'], '❓')} {flight['status']}\n\n"
+            message += f"{i}. *{flight['flightno']}* - {flight['operator']}\n"
+            message += f"   📍 {flight['fromtolocation']}\n"
+            message += f"   🕐 {flight['schedule']} | {status_emoji.get(flight['flightstat'], '❓')} {flight['flightstat']}\n"
+            message += f"   🚪 Gate: {flight['gatenumber']}\n\n"
         message += "💡 *Tip:* Gunakan `/flight [kode] [tanggal]` untuk detail lengkap"
         await update.message.reply_text(message, parse_mode='Markdown')
     else:
@@ -219,12 +179,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message.text.lower()
     if any(keyword in message for keyword in ['flight', 'penerbangan', 'jadwal', 'schedule']):
         await update.message.reply_text(
-            "🤖 Saya dapat membantu Anda mencari informasi penerbangan!\n\n"
+            "🤖 Saya dapat membantu Anda mencari informasi penerbangan dari database real-time!\n\n"
             "Gunakan perintah:\n"
             "• `/flight [kode_penerbangan] [tanggal]` - Info penerbangan spesifik\n"
             "• `/schedule [tanggal]` - Jadwal penerbangan\n"
             "• `/route [asal] [tujuan] [tanggal]` - Penerbangan berdasarkan rute\n"
-            "• `/help` - Bantuan lengkap",
+            "• `/help` - Bantuan lengkap\n\n"
+            "*Contoh:* `/flight GA123 2024-01-15`",
             parse_mode='Markdown'
         )
     else:

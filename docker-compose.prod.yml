@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  flight-bot:
+    build: .
+    container_name: flight-schedule-bot
+    restart: unless-stopped
+    environment:
+      # Bot Configuration
+      - BOT_TOKEN=${BOT_TOKEN}
+      # Database Configuration (External Database)
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_PORT=${DB_PORT}
+      # Python Configuration
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+    networks:
+      - flight-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import mysql.connector; mysql.connector.connect(host='${DB_HOST}', user='${DB_USER}', password='${DB_PASSWORD}', database='${DB_NAME}')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  flight-network:
+    driver: bridge
