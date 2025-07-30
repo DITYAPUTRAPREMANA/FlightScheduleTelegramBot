@@ -6,21 +6,15 @@ services:
     container_name: flight-schedule-bot
     restart: unless-stopped
     environment:
-      # Bot Configuration
       - BOT_TOKEN=${BOT_TOKEN}
-
-      # Database Configuration
       - DB_HOST=${DB_HOST}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
       - DB_PORT=${DB_PORT}
-
-      # Python Configuration
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
     volumes:
-      # Mount logs directory for persistence
       - ./logs:/app/logs
     networks:
       - flight-network
@@ -33,7 +27,6 @@ services:
       retries: 3
       start_period: 40s
 
-  # Optional: MySQL service if you want to run database locally
   mysql:
     image: mysql:8.0
     container_name: flight-mysql
@@ -47,7 +40,7 @@ services:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "3306:3306"
+      - "3307:3306"
     networks:
       - flight-network
     healthcheck:

@@ -3,16 +3,14 @@ import mysql.connector
 from mysql.connector import Error
 import os
 
-# Konfigurasi database MySQL dari environment variables
 db_config = {
-    'host': os.getenv('DB_HOST', '10.2.98.56'),
+    'host': os.getenv('DB_HOST', '10.2.99.9'),
     'user': os.getenv('DB_USER', 'root'),
     'password': os.getenv('DB_PASSWORD', 'TrizzKunn182005'),
     'database': os.getenv('DB_NAME', 'flight_data'),
     'port': int(os.getenv('DB_PORT', 3306))
 }
 
-# URL API
 api_url = "http://10.2.20.210/fids_new/index.php/Welcome/api_inter"
 
 def fetch_data_from_api():
@@ -34,7 +32,8 @@ def create_table_if_not_exists(conn):
             flightno VARCHAR(50),
             gatenumber VARCHAR(20),
             flightstat VARCHAR(50),
-            fromtolocation VARCHAR(100)
+            fromtolocation VARCHAR(100),
+            departure ENUM('ID', 'IN')
         )
     """)
     conn.commit()
@@ -56,9 +55,11 @@ def save_data_to_mysql(data):
                     print(f"SKIP: Bukan dict: {flight}")
                     continue
                 try:
+                    flight['departure'] = 'IN'
+
                     query = """
-                        INSERT INTO flights (id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        INSERT INTO flights (id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation, departure)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON DUPLICATE KEY UPDATE
                             operator=VALUES(operator),
                             schedule=VALUES(schedule),
@@ -66,7 +67,8 @@ def save_data_to_mysql(data):
                             flightno=VALUES(flightno),
                             gatenumber=VALUES(gatenumber),
                             flightstat=VALUES(flightstat),
-                            fromtolocation=VALUES(fromtolocation)
+                            fromtolocation=VALUES(fromtolocation),
+                            departure=VALUES(departure)
                     """
                     values = (
                         flight.get('id'),
@@ -76,7 +78,8 @@ def save_data_to_mysql(data):
                         flight.get('flightno'),
                         flight.get('gatenumber'),
                         flight.get('flightstat'),
-                        flight.get('fromtolocation')
+                        flight.get('fromtolocation'),
+                        flight.get('departure')
                     )
                     cursor.execute(query, values)
                 except Exception as e:

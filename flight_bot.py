@@ -4,8 +4,6 @@ import mysql.connector
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Database configuration from environment variables
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
     'user': os.getenv('DB_USER'),
@@ -43,7 +41,7 @@ class FlightScheduleBot:
                 return None
             cursor = self.db_connection.cursor(dictionary=True)
             query = """
-                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation
+                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation, departure
                 FROM flights
                 WHERE flightno = %s AND DATE(schedule) = %s
             """
@@ -63,7 +61,7 @@ class FlightScheduleBot:
                 return []
             cursor = self.db_connection.cursor(dictionary=True)
             query = """
-                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation
+                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation, departure
                 FROM flights
                 WHERE DATE(schedule) = %s
                 ORDER BY schedule
@@ -85,13 +83,12 @@ class FlightScheduleBot:
                 return []
             cursor = self.db_connection.cursor(dictionary=True)
             query = """
-                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation
+                SELECT id, operator, schedule, estimate, flightno, gatenumber, flightstat, fromtolocation, departure
                 FROM flights
                 WHERE fromtolocation LIKE %s AND DATE(schedule) = %s
                 ORDER BY schedule
                 LIMIT 20
             """
-            # Search for flights containing origin and destination in fromtolocation
             route_pattern = f"%{origin}%{destination}%"
             cursor.execute(query, (route_pattern, date))
             result = cursor.fetchall()

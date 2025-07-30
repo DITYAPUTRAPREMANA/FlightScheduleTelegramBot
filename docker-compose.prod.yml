@@ -6,19 +6,15 @@ services:
     container_name: flight-schedule-bot
     restart: unless-stopped
     environment:
-      # Bot Configuration
       - BOT_TOKEN=${BOT_TOKEN}
-      # Database Configuration (External Database)
       - DB_HOST=${DB_HOST}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
       - DB_PORT=${DB_PORT}
-      # Python Configuration
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
     volumes:
-      # Mount logs directory for persistence
       - ./logs:/app/logs
     networks:
       - flight-network

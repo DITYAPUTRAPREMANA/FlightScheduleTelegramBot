@@ -69,16 +69,17 @@ async def flight_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'Arrived': '🛬'
         }
         message = f"""
-    ✈️ *Informasi Penerbangan {flight_info['flightno']}*
+✈️ *Informasi Penerbangan {flight_info['flightno']}*
 
-    🏢 *Operator:* {flight_info['operator']}
-    📅 *Jadwal:* {flight_info['schedule']}
-    ⏰ *Estimasi:* {flight_info['estimate']}
+🏢 *Operator:* {flight_info['operator']}
+📅 *Jadwal:* {flight_info['schedule']}
+⏰ *Estimasi:* {flight_info['estimate']}
 
-    🚪 *Gate:* {flight_info['gatenumber']}
-    📊 *Status:* {status_emoji.get(flight_info['flightstat'], '❓')} {flight_info['flightstat']}
-    📍 *Rute:* {flight_info['fromtolocation']}
-            """
+🚪 *Gate:* {flight_info['gatenumber']}
+📊 *Status:* {status_emoji.get(flight_info['flightstat'], '❓')} {flight_info['flightstat']}
+📍 *Rute:* {flight_info['fromtolocation']}
+🌏 *Departure:* {flight_info.get('departure', '-')}
+        """
         await update.message.reply_text(message, parse_mode='Markdown')
     else:
         await update.message.reply_text(
@@ -110,17 +111,9 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if flights:
         message = f"📅 *Jadwal Penerbangan {date_obj.strftime('%d %B %Y')}*\n\n"
         for i, flight in enumerate(flights, 1):
-            status_emoji = {
-                'On Time': '✅',
-                'Delayed': '⏰',
-                'Cancelled': '❌',
-                'Departed': '🛫',
-                'Arrived': '🛬'
-            }
-            message += f"{i}. *{flight['flightno']}* - {flight['operator']}\n"
+            message += f"{i}. *{flight['flightno']}*\n"
             message += f"   📍 {flight['fromtolocation']}\n"
-            message += f"   🕐 {flight['schedule']} | {status_emoji.get(flight['flightstat'], '❓')} {flight['flightstat']}\n"
-            message += f"   🚪 Gate: {flight['gatenumber']}\n\n"
+            message += f"   🌏 Departure: {flight.get('departure', '-')}\n\n"
         message += "💡 *Tip:* Gunakan `/flight [kode] [tanggal]` untuk detail lengkap"
         await update.message.reply_text(message, parse_mode='Markdown')
     else:
@@ -166,7 +159,8 @@ async def route_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += f"{i}. *{flight['flightno']}* - {flight['operator']}\n"
             message += f"   📍 {flight['fromtolocation']}\n"
             message += f"   🕐 {flight['schedule']} | {status_emoji.get(flight['flightstat'], '❓')} {flight['flightstat']}\n"
-            message += f"   🚪 Gate: {flight['gatenumber']}\n\n"
+            message += f"   🚪 Gate: {flight['gatenumber']}\n"
+            message += f"   🌏 Departure: {flight.get('departure', '-')}\n\n"
         message += "💡 *Tip:* Gunakan `/flight [kode] [tanggal]` untuk detail lengkap"
         await update.message.reply_text(message, parse_mode='Markdown')
     else:

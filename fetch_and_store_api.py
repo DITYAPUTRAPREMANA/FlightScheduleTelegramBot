@@ -6,8 +6,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_URL = "http://10.2.20.210/fids_new/index.php/Welcome/api_inter"
-
-# Database configuration from environment variables
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
     'user': os.getenv('DB_USER'),
@@ -69,7 +67,6 @@ def main():
     create_table_if_not_exists(conn)
 
     for flight in flights:
-        # Only keep the required fields
         data = {
             'id': flight.get('id'),
             'operator': flight.get('operator'),
