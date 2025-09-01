@@ -7,51 +7,20 @@ services:
     restart: unless-stopped
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
-      - DB_HOST=${DB_HOST}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - DB_PORT=${DB_PORT}
+      - API_DOM_URL=${API_DOM_URL}
+      - API_INTER_URL=${API_INTER_URL}
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
     volumes:
       - ./logs:/app/logs
     networks:
       - flight-network
-    depends_on:
-      - mysql
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  mysql:
-    image: mysql:8.0
-    container_name: flight-mysql
-    restart: unless-stopped
-    environment:
-      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
-      - MYSQL_DATABASE=${DB_NAME}
-      - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASSWORD}
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "3307:3306"
-    networks:
-      - flight-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-volumes:
-  mysql_data:
 
 networks:
   flight-network:

@@ -7,11 +7,8 @@ services:
     restart: unless-stopped
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
-      - DB_HOST=${DB_HOST}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - DB_PORT=${DB_PORT}
+      - API_DOM_URL=${API_DOM_URL}
+      - API_INTER_URL=${API_INTER_URL}
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
     volumes:
@@ -19,7 +16,7 @@ services:
     networks:
       - flight-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import mysql.connector; mysql.connector.connect(host='${DB_HOST}', user='${DB_USER}', password='${DB_PASSWORD}', database='${DB_NAME}')"]
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
