@@ -21,7 +21,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if is_user_monitoring(user_id):
         await update.message.reply_text(
-            "⚠️ You are already stop monitoring a flight. If you want to start monitoring a flight, please use /start again."
+            "⚠️ You are currently monitoring a flight. Please stop monitoring first using /stop_monitor before using other commands.."
         )
         return
     welcome_message = """
@@ -49,7 +49,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     if is_user_monitoring(user_id) and not choice.startswith("stop_monitor_"):
         await query.edit_message_text(
-            "⚠️ You are already stop monitoring a flight. If you want to start monitoring a flight, please use /start again."
+            "⚠️ You are currently monitoring a flight. Please stop monitoring first using /stop_monitor before using other commands.."
         )
         return
     if choice in ['I', 'D']:
@@ -333,7 +333,6 @@ async def flight_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     flight_code = context.args[0].upper()
-    # Automatically use today's date
     date_str = datetime.now().strftime('%Y-%m-%d')
 
     flight_info = flight_bot.get_flight_info(flight_code, date_str)
