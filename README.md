@@ -1,286 +1,138 @@
-## 🏗️ Struktur Program
-flight-schedule-bot/
-├── main.py             # Entry point & bot initialization
-├── flight_bot.py       # Core flight data logic
-├── flight_handler.py   # Telegram bot handlers
-├── language.py         # Multi-language support
-├── config.py           # Configuration management
-├── health.py           # Health check API
-├── requirements.txt    # Dependencies
-├── Dockerfile          # Container configuration
-└── docker-compose.yml  # Orchestration
-```
+Here is a `README.md` for your project based on the files provided:
 
-## 🔧 Penjelasan Per Fungsi
+---
 
-### 📁 **main.py**
+# Flight Information Monitoring Bot
 
-#### `main()`
-- **Fungsi**: Entry point utama aplikasi
-- **Tugas**:
-  - Inisialisasi bot Telegram
-  - Registrasi command handlers
-  - Menjalankan thread monitoring dan health server
-  - Mengatur polling bot
+This project is a flight monitoring bot that provides real-time updates on flight schedules and statuses. It integrates with Telegram, allowing users to monitor both domestic and international flights. The bot fetches data from APIs and sends notifications when there are updates to the flight statuses, schedules, or gates.
 
-#### `run_monitoring_loop(application)`
-- **Fungsi**: Menjalankan loop monitoring dalam thread terpisah
-- **Tugas**:
-  - Membuat event loop baru
-  - Menjalankan `monitor_flight_status()`
-  - Error handling untuk thread monitoring
+## Features
 
-#### `run_health_server()`
-- **Fungsi**: Menjalankan health check server
-- **Tugas**:
-  - Konfigurasi FastAPI server
-  - Menjalankan server di port 8000
-  - Health check endpoint
+* **Flight Monitoring**: Users can monitor specific flights by flight number.
+* **Real-time Notifications**: The bot sends notifications when there are updates such as delays, cancellations, or gate changes.
+* **Flight Schedule Lookup**: Users can search for flight schedules by date and flight type (domestic or international).
+* **Multi-language Support**: The bot supports English and Bahasa Indonesia, with language preference selection.
+* **Health Monitoring**: A health check endpoint is available to ensure the bot's API is functioning properly.
 
-### 📁 **flight_handler.py**
+## Requirements
 
-#### **Fungsi Utilitas**###
+* Python 3.8+
+* `requests` library
+* `python-dotenv` for environment variable management
+* `python-telegram-bot` for Telegram integration
+* `FastAPI` for health check endpoint
+* `Uvicorn` for serving the FastAPI health check endpoint
 
-##### `is_user_monitoring(user_id)`
-- **Fungsi**: Mengecek apakah user sedang monitoring penerbangan
-- **Return**: Boolean
-- **Parameter**: `user_id` - ID user Telegram
+## Installation
 
-##### `auto_delete_previous_message(bot, user_id, chat_id)`
-- **Fungsi**: Menghapus pesan sebelumnya untuk mencegah penumpukan
-- **Tugas**:
-  - Mencari message ID dari history
-  - Menghapus pesan lama
-  - Error handling jika gagal hapus
+1. Clone the repository:
 
-##### `store_message_id(user_id, message_id)`
-- **Fungsi**: Menyimpan message ID untuk auto-delete
-- **Tugas**: Menyimpan mapping user_id → message_id
+   ```bash
+   git clone <repository-url>
+   cd <project-directory>
+   ```
 
-##### `safe_edit_message(query, text, reply_markup, parse_mode)`
-- **Fungsi**: Edit pesan dengan error handling
-- **Tugas**:
-  - Coba edit pesan existing
-  - Jika gagal, hapus pesan lama dan kirim pesan baru
-  - Fallback mechanism
+2. Install the required dependencies:
 
-#### **Command Handlers**###
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-##### `start(update, context)`
-- **Fungsi**: Handler untuk command `/start`
-- **Tugas**:
-  - Cek apakah user sedang monitoring
-  - Tampilkan menu pilih bahasa jika belum set
-  - Tampilkan menu pilih jenis penerbangan
-  - Auto-delete pesan sebelumnya
+3. Set up your `.env` file:
 
-##### `flight_info(update, context)`
-- **Fungsi**: Handler untuk command `/flight [nomor_penerbangan]`
-- **Tugas**:
-  - Validasi format input
-  - Cari informasi penerbangan
-  - Tampilkan info lengkap (jadwal, estimasi, gate, status, rute)
-  - Tampilkan tombol monitoring
-  - Validasi jenis penerbangan (domestik/internasional)
+   * The `.env` file should include the following:
 
-##### `schedule_info(update, context)`
-- **Fungsi**: Handler untuk command `/schedule [tanggal]`
-- **Tugas**:
-  - Validasi format tanggal (YYYY-MM-DD)
-  - Ambil data penerbangan berdasarkan tanggal
-  - Filter berdasarkan jenis penerbangan
-  - Tampilkan maksimal 20 penerbangan
-  - Format tanggal sesuai bahasa
+     ```bash
+     BOT_TOKEN=<Your-Telegram-Bot-Token>
+     API_DOM_URL=<Your-Domestic-Flight-API-URL>
+     API_INTER_URL=<Your-International-Flight-API-URL>
+     MONITOR_INTERVAL_SECONDS=10
+     LOG_LEVEL=INFO
+     ```
 
-##### `stop_monitor(update, context)`
-- **Fungsi**: Handler untuk command `/stop_monitor`
-- **Tugas**:
-  - Hentikan monitoring user
-  - Hapus dari daftar monitored_flights
-  - Konfirmasi ke user
+4. Start the bot:
 
-##### `debug_monitor(update, context)`
-- **Fungsi**: Handler untuk command `/debug`
-- **Tugas**:
-  - Tampilkan informasi debug
-  - Status monitoring user
-  - Jumlah notifikasi yang dikirim
-  - Test koneksi API live
+   ```bash
+   python main.py
+   ```
 
-##### `change_language(update, context)`
-- **Fungsi**: Handler untuk command `/language`
-- **Tugas**:
-  - Ubah preferensi bahasa user
-  - Tampilkan menu pilih bahasa
-  - Update user_data
+   This will:
 
-#### **Button Handlers** ###
+   * Start the flight monitoring loop.
+   * Start the health check server on `http://localhost:8000/health`.
 
-##### `button(update, context)`
-- **Fungsi**: Handler untuk semua callback query (tombol inline)
-- **Tugas**:
-  - Parse callback data
-  - Route ke handler yang sesuai
-  - Handle pilihan bahasa, jenis penerbangan, monitoring, dll
+5. Start monitoring flights by interacting with the bot on Telegram.
 
-##### `show_flight_type_selection(update, context, language)`
-- **Fungsi**: Tampilkan menu pilih jenis penerbangan
-- **Tugas**:
-  - Tampilkan tombol Domestic/International
-  - Sesuaikan bahasa
-  - Auto-delete pesan sebelumnya
+## Key Components
 
-##### `handle_schedule_request(query, flight_type, date_str, user_id, context)`
-- **Fungsi**: Handle tombol lihat jadwal
-- **Tugas**:
-  - Ambil data penerbangan berdasarkan tanggal
-  - Filter berdasarkan jenis penerbangan
-  - Format tanggal sesuai bahasa
-  - Tampilkan maksimal 20 penerbangan
+### `flight_bot.py`
 
-##### `handle_search_flight_request(query, flight_type, user_id, context)`
-- **Fungsi**: Handle tombol cari penerbangan
-- **Tugas**:
-  - Tampilkan instruksi pencarian
-  - Format command yang benar
-  - Validasi jenis penerbangan
+Contains the `FlightScheduleBot` class, which handles the interaction with the flight APIs. It fetches flight data, normalizes it, and provides methods to retrieve flight details for specific dates and flight codes.
 
-##### `handle_flight_search_result(query, flight_code, date_str, user_id, flight_type, context)`
-- **Fungsi**: Handle hasil pencarian penerbangan
-- **Tugas**:
-  - Cari informasi penerbangan
-  - Tampilkan info lengkap jika ditemukan
-  - Tampilkan tombol monitoring
-  - Handle jika tidak ditemukan
+### `flight_handler.py`
 
-##### `handle_back_to_menu(query, context)`
-- **Fungsi**: Handle tombol kembali ke menu
-- **Tugas**:
-  - Cek status monitoring user
-  - Tampilkan menu utama
-  - Navigasi yang konsisten
+Handles the main logic for the bot, including user interactions via Telegram commands and callback queries. It manages the state of flight monitoring, such as starting and stopping monitoring, handling schedules, and sending notifications.
 
-#### **Monitoring Functions**
+### `main.py`
 
-##### `monitor_flight_status(application)`
-- **Fungsi**: Loop monitoring real-time utama
-- **Tugas**:
-  - Loop kontinyu setiap 10 detik
-  - Cek perubahan status untuk semua user
-  - Deteksi perubahan: status, jadwal, estimasi, gate
-  - Kirim notifikasi jika ada perubahan
-  - Handle final status (Departed, Gate Close)
-  - Auto-stop monitoring jika final status
+This is the entry point for the bot. It sets up the Telegram bot, runs the monitoring system in a separate thread, and starts the health server. It also manages the polling of Telegram updates.
 
-##### `format_flight_status_message(flight_data, changes, language)`
-- **Fungsi**: Format pesan status penerbangan
-- **Tugas**:
-  - Format pesan dengan emoji status
-  - Tampilkan perubahan yang terjadi
-  - Timestamp update
-  - Konsisten dengan bahasa
+### `health.py`
 
-#### **Utility Functions** ###
+Provides a health check endpoint using FastAPI. It responds with a status of `"ok"` when the bot is running correctly.
 
-##### `normalize_value(value)`
-- **Fungsi**: Normalisasi nilai untuk perbandingan
-- **Tugas**:
-  - Handle None values
-  - Strip whitespace
-  - Convert ke string
+### `config.py`
 
-##### `safe_string_compare(val1, val2)`
-- **Fungsi**: Perbandingan string yang aman
-- **Tugas**:
-  - Normalisasi kedua nilai
-  - Perbandingan yang robust
-  - Handle edge cases
+Contains the configuration for the bot, including the environment variables for the API URLs, bot token, and logging level.
 
-##### `normalize_status(value)`
-- **Fungsi**: Normalisasi status untuk perbandingan
-- **Tugas**:
-  - Convert ke lowercase
-  - Handle None values
-  - Konsistensi format
+### `.env`
 
-### 📁 **flight_bot.py**
+Contains environment variables used for the configuration, such as the bot token and API URLs.
 
-#### `FlightScheduleBot` Class
+## Usage
 
-##### `__init__()`
-- **Fungsi**: Inisialisasi class
-- **Tugas**: Setup basic configuration
+1. **Start the bot**:
 
-##### `_fetch_api(url)`
-- **Fungsi**: Fetch data dari API eksternal
-- **Tugas**:
-  - HTTP GET request dengan timeout
-  - Error handling untuk network issues
-  - Return JSON data atau None
+   * Use `/start` to begin the interaction with the bot.
+   * Select the flight type (domestic or international).
+   * Monitor flight statuses by using the "Start Monitoring" button.
 
-##### `_normalize_flights(data, departure)`
-- **Fungsi**: Normalisasi data penerbangan dari API
-- **Tugas**:
-  - Extract data dari response API
-  - Standardisasi format data
-  - Tambahkan informasi departure type
-  - Filter data yang valid
+2. **Monitor Flight**:
 
-##### `_get_all_flights_for_date(date)`
-- **Fungsi**: Ambil semua penerbangan untuk tanggal tertentu
-- **Tugas**:
-  - Fetch data domestik dan internasional
-  - Normalisasi data
-  - Filter berdasarkan tanggal
-  - Sort berdasarkan jadwal
+   * The bot will send real-time notifications for status updates such as delays or cancellations.
 
-##### `get_flights_by_date(date)`
-- **Fungsi**: Public method untuk ambil penerbangan per tanggal
-- **Return**: List of flight dictionaries
+3. **Stop Monitoring**:
 
-##### `get_flight_info(flight_code, date)`
-- **Fungsi**: Cari informasi penerbangan spesifik
-- **Tugas**:
-  - Cari berdasarkan nomor penerbangan
-  - Case insensitive search
-  - Return flight info atau None
+   * To stop monitoring a flight, use `/stop_monitor`.
 
-##### `get_flight_info_by_id(flight_id)`
-- **Fungsi**: Cari penerbangan berdasarkan ID
-- **Tugas**:
-  - Cari di data domestik dan internasional
-  - Return flight info atau None
+4. **Check Flight Information**:
 
-### 📁 **config.py**
+   * Use `/flight <flight_code>` to get details of a specific flight.
 
-#### Environment Variables
-- **BOT_TOKEN**: Token bot Telegram
-- **API_DOM_URL**: URL API penerbangan domestik
-- **API_INTER_URL**: URL API penerbangan internasional
-- **MONITOR_INTERVAL_SECONDS**: Interval monitoring (default: 10)
-- **LOG_LEVEL**: Level logging (default: INFO)
+5. **Check Flight Schedules**:
 
-### 📁 **health.py**
+   * Use `/schedule <date>` to view available flights for a given date.
 
-#### `app` (FastAPI instance)
-- **Fungsi**: Health check endpoint
-- **Endpoint**: `/health`
-- **Return**: `{"status": "ok"}`
-- **Tujuan**: Docker health check
+6. **Change Language**:
 
-### 📁 **language.py`
+   * Use `/language` to change the language preference between English and Bahasa Indonesia.
 
-#### `get_text(key, language, **kwargs)`
-- **Fungsi**: Ambil teks berdasarkan bahasa
-- **Tugas**:
-  - Lookup teks dari TRANSLATIONS
-  - Format string dengan parameter
-  - Fallback ke bahasa default
+7. **Health Check**:
 
-#### `get_status_emoji(status)`
-- **Fungsi**: Ambil emoji berdasarkan status penerbangan
-- **Tugas**: Mapping status ke emoji yang sesuai
+   * Access the health check endpoint at `/health` to ensure the bot is running.
 
-#### `get_month_names(language)`
-- **Fungsi**: Ambil nama bulan berdasarkan bahasa
-- **Tugas**: Mapping nama bulan Inggris ke Indonesia
+## Logging
+
+The bot logs detailed information about its operations. Logs are generated based on the level specified in the `.env` file (`LOG_LEVEL`), which can be adjusted to control the verbosity of logs.
+
+## Contributing
+
+Feel free to fork the repository and submit pull requests for any improvements, bug fixes, or new features.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+This should give a clear overview of the project. Let me know if you'd like any adjustments!
