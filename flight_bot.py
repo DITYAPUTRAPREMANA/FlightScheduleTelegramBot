@@ -1,14 +1,9 @@
 import logging
 from typing import Any, Dict, List, Optional
-
 import requests
-
 from config import API_DOM_URL, API_INTER_URL
 
-
 logger = logging.getLogger(__name__)
-
-
 class FlightScheduleBot:
     def __init__(self) -> None:
         pass

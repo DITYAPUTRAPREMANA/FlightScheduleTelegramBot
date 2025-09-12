@@ -6,40 +6,114 @@ import asyncio
 import logging
 import traceback
 from config import MONITOR_INTERVAL_SECONDS
+from language import get_text, get_status_emoji, get_month_names
 
 logger = logging.getLogger(__name__)
 flight_bot = FlightScheduleBot()
 
 monitored_flights = {}
 should_exit = False
+user_message_history = {}
 
 def is_user_monitoring(user_id):
     """Check if user is currently monitoring a flight"""
     return user_id in monitored_flights
 
+async def auto_delete_previous_message(bot, user_id, chat_id=None):
+    """Auto delete previous message to prevent message accumulation"""
+    try:
+        if user_id in user_message_history:
+            message_id = user_message_history[user_id]
+            if chat_id is None:
+                chat_id = user_id
+            await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            logger.info(f"Auto-deleted previous message {message_id} for user {user_id}")
+    except Exception as e:
+        logger.warning(f"Could not auto-delete previous message for user {user_id}: {e}")
+
+def store_message_id(user_id, message_id):
+    """Store message ID for auto-delete functionality"""
+    user_message_history[user_id] = message_id
+
+async def safe_edit_message(query, text, reply_markup=None, parse_mode=None):
+    """Safely edit message with error handling"""
+    try:
+        return await query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        logger.warning(f"Could not edit message, sending new message instead: {e}")
+        user_id = query.from_user.id
+        await auto_delete_previous_message(query.get_bot(), user_id, query.message.chat_id)
+        return await query.get_bot().send_message(
+            chat_id=query.message.chat_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
+    await auto_delete_previous_message(update.get_bot(), user_id)
+
     if is_user_monitoring(user_id):
-        await update.message.reply_text(
-            "⚠️ You are currently monitoring a flight. Please stop monitoring first using /stop_monitor before using other commands.."
+        user_language = context.user_data.get('language', 'en')
+        sent_message = await update.message.reply_text(
+            get_text('currently_monitoring', user_language)
         )
+        store_message_id(user_id, sent_message.message_id)
         return
-    welcome_message = """
-🛫 *Hello Passenger, Welcome to Flight Info Bot!*
 
-I can help you find flight schedule information in real-time 😉
+    user_language = context.user_data.get('language')
+    if user_language is None:
+        welcome_message = f"""
+{get_text('welcome_title', 'en')}
 
-*Please select the type of flights you want to monitor:*
+{get_text('welcome_subtitle', 'en')}
+
+{get_text('select_language', 'en')}
+        """
+        keyboard = [
+            [
+                InlineKeyboardButton("🇺🇸 English", callback_data='lang_en'),
+                InlineKeyboardButton("🇮🇩 Bahasa Indonesia", callback_data='lang_id')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        sent_message = await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+        store_message_id(user_id, sent_message.message_id)
+    else:
+        await show_flight_type_selection(update, context, user_language)
+
+async def show_flight_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, language: str):
+    """Show flight type selection menu in user's language"""
+    user_id = update.effective_user.id if hasattr(update, 'effective_user') else update.from_user.id
+
+    welcome_message = f"""
+{get_text('welcome_title', language)}
+
+{get_text('welcome_subtitle', language)}
+
+{get_text('select_flight_type', language)}
     """
     keyboard = [
         [
-            InlineKeyboardButton("International", callback_data='I'),
-            InlineKeyboardButton("Domestic", callback_data='D')
+            InlineKeyboardButton(get_text('international', language), callback_data='I'),
+            InlineKeyboardButton(get_text('domestic', language), callback_data='D')
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+    if hasattr(update, 'message'):
+        await auto_delete_previous_message(update.get_bot(), user_id)
+        sent_message = await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+        store_message_id(user_id, sent_message.message_id)
+    else:
+        sent_message = await update.edit_message_text(welcome_message, reply_markup=reply_markup)
+        store_message_id(user_id, sent_message.message_id)
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -47,32 +121,58 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     await query.answer()
+
+    if choice.startswith('lang_'):
+        language = choice.split('_')[1]
+        was_changing_language = context.user_data.get('language') is not None
+        context.user_data['language'] = language
+        if was_changing_language:
+            language_name = "English" if language == 'en' else "Bahasa Indonesia"
+            confirmation_message = f"✅ {get_text('language_changed', language, language_name=language_name)}\n\n"
+            confirmation_message += f"{get_text('welcome_title', language)}\n\n"
+            confirmation_message += f"{get_text('welcome_subtitle', language)}\n\n"
+            confirmation_message += f"{get_text('select_flight_type', language)}"
+            keyboard = [
+                [
+                    InlineKeyboardButton(get_text('international', language), callback_data='I'),
+                    InlineKeyboardButton(get_text('domestic', language), callback_data='D')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            sent_message = await safe_edit_message(query, confirmation_message, reply_markup=reply_markup)
+            store_message_id(user_id, sent_message.message_id)
+        else:
+            await show_flight_type_selection(query, context, language)
+        return
+
+    user_language = context.user_data.get('language', 'en')
     if is_user_monitoring(user_id) and not choice.startswith("stop_monitor_"):
-        await query.edit_message_text(
-            "⚠️ You are currently monitoring a flight. Please stop monitoring first using /stop_monitor before using other commands.."
-        )
+        sent_message = await safe_edit_message(query, get_text('currently_monitoring', user_language))
+        store_message_id(user_id, sent_message.message_id)
         return
     if choice in ['I', 'D']:
         context.user_data['flight_type'] = choice
-        flight_type_name = "International" if choice == 'I' else "Domestic"
+        flight_type_name = get_text('international', user_language) if choice == 'I' else get_text('domestic', user_language)
 
         from datetime import timedelta
         today = datetime.now()
         keyboard = [
             [
-                InlineKeyboardButton("📅 Schedule", callback_data=f"schedule_{choice}_{today.strftime('%Y-%m-%d')}"),
-                InlineKeyboardButton("🔍 Search Flight", callback_data=f"search_flight_{choice}")
+                InlineKeyboardButton(get_text('schedule', user_language), callback_data=f"schedule_{choice}_{today.strftime('%Y-%m-%d')}"),
+                InlineKeyboardButton(get_text('search_flight', user_language), callback_data=f"search_flight_{choice}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.edit_message_text(
-            text=f"✅ You selected to monitor {flight_type_name.lower()} flights.\n\n"
-                 f"🛫 What would you like to do?\n\n"
-                 f"• View flight schedules\n"
-                 f"• Search for a specific flight",
+        sent_message = await safe_edit_message(
+            query,
+            text=f"{get_text('flight_selected', user_language, flight_type=flight_type_name.lower())}\n\n"
+                 f"{get_text('what_would_you_like', user_language)}\n\n"
+                 f"{get_text('view_schedules', user_language)}\n"
+                 f"{get_text('search_specific', user_language)}",
             reply_markup=reply_markup
         )
+        store_message_id(user_id, sent_message.message_id)
 
     elif choice.startswith("monitor_"):
         flight_id = choice.split('_')[1]
@@ -90,54 +190,59 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'last_seen': datetime.now(),
                 'notification_count': 0,
                 'check_count': 0,
-                'last_message_id': None
+                'last_message_id': None,
+                'language': user_language
             }
 
             logger.info(f"User {user_id} started monitoring flight {flight_info['flightno']} (ID: {flight_id})")
             logger.info(f"Initial monitoring data: {monitored_flights[user_id]}")
 
             keyboard = [
-                [InlineKeyboardButton("🚫 Stop Monitoring", callback_data="stop_monitoring")]
+                [InlineKeyboardButton(get_text('stop_monitoring', user_language), callback_data=f"stop_monitor_{flight_id}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            sent_message = await query.edit_message_text(
-                f"✅ You are now monitoring flight {flight_info['flightno']}!\n\n"
-                f"📊 Current Status: {flight_info['flightstat']}\n"
-                f"⏰ Schedule: {flight_info['schedule']}\n"
-                f"🕐 Estimate: {flight_info['estimate']}\n"
-                f"🚪 Gate: {flight_info['gatenumber']}\n\n"
-                "🔔 You will receive notifications when the status or timing changes.\n\n"
-                "💡 Monitoring system will check for updates every 10 seconds.",
+            sent_message = await safe_edit_message(
+                query,
+                f"{get_text('monitoring_started', user_language, flight_no=flight_info['flightno'])}\n\n"
+                f"{get_text('current_status', user_language)} {flight_info['flightstat']}\n"
+                f"{get_text('schedule_label', user_language)} {flight_info['schedule']}\n"
+                f"{get_text('estimate_label', user_language)} {flight_info['estimate']}\n"
+                f"{get_text('gate_label', user_language)} {flight_info['gatenumber']}\n\n"
+                f"{get_text('monitoring_notifications', user_language)}\n\n"
+                f"{get_text('monitoring_interval', user_language)}",
                 reply_markup=reply_markup
             )
             if sent_message:
                 monitored_flights[user_id]['last_message_id'] = sent_message.message_id
+                store_message_id(user_id, sent_message.message_id)
 
     elif choice.startswith("stop_monitor_"):
         flight_id = choice.split('_')[-1]
         if user_id in monitored_flights:
             flight_no = monitored_flights[user_id].get('flight_no', flight_id)
+            user_lang = monitored_flights[user_id].get('language', 'en')
             del monitored_flights[user_id]
             logger.info(f"User {user_id} stopped monitoring flight {flight_no}")
-            await query.edit_message_text(
-                f"🚫 You have stopped monitoring flight {flight_no}.\n\n"
-                "✅ You can now use all bot commands again. Type /start to begin."
+            sent_message = await safe_edit_message(
+                query,
+                f"{get_text('monitoring_stopped', user_lang, flight_no=flight_no)}\n\n"
+                f"{get_text('can_use_commands', user_lang)}"
             )
+            store_message_id(user_id, sent_message.message_id)
         else:
-            await query.edit_message_text(
-                "❌ No active monitoring found."
-            )
+            sent_message = await safe_edit_message(query, get_text('no_active_monitoring', user_language))
+            store_message_id(user_id, sent_message.message_id)
 
     elif choice.startswith("schedule_"):
         parts = choice.split('_')
         if len(parts) >= 3:
             flight_type = parts[1]
             date_str = parts[2]
-            await handle_schedule_request(query, flight_type, date_str, user_id)
+            await handle_schedule_request(query, flight_type, date_str, user_id, context)
 
     elif choice.startswith("search_flight_"):
         flight_type = choice.split('_')[2]
-        await handle_search_flight_request(query, flight_type, user_id)
+        await handle_search_flight_request(query, flight_type, user_id, context)
 
     elif choice.startswith("flight_search_"):
         parts = choice.split('_')
@@ -145,15 +250,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             flight_code = parts[2]
             date_str = parts[3]
             flight_type = context.user_data.get('flight_type', 'D')
-            await handle_flight_search_result(query, flight_code, date_str, user_id, flight_type)
+            await handle_flight_search_result(query, flight_code, date_str, user_id, flight_type, context)
 
     elif choice == "dont_monitor":
-        await query.edit_message_text(
-            "✅ Alright! You can search for other flights or use /start to begin again."
+        sent_message = await safe_edit_message(
+            query,
+            f"✅ {get_text('can_use_commands', user_language)}"
         )
-
-    elif choice == "stop_monitoring":
-        await handle_stop_monitoring_button(query, user_id)
+        store_message_id(user_id, sent_message.message_id)
 
     elif choice == "back_to_menu":
         await handle_back_to_menu(query, context)
@@ -161,53 +265,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_back_to_menu(query, context):
     """Handle back to menu button for callback queries"""
     user_id = query.from_user.id
+    user_language = context.user_data.get('language', 'en')
     if is_user_monitoring(user_id):
         await query.edit_message_text(
-            "⚠️ You are currently monitoring a flight. Please stop monitoring first using /stop_monitor before using other commands."
+            get_text('currently_monitoring', user_language)
         )
         return
 
-    welcome_message = """
-🛫 *Hello Passenger, Welcome to Flight Info Bot!*
+    await show_flight_type_selection(query, context, user_language)
 
-I can help you find flight schedule information in real-time 😉
-
-*Please select the type of flights you want to monitor:*
-    """
-    keyboard = [
-        [
-            InlineKeyboardButton("International", callback_data='I'),
-            InlineKeyboardButton("Domestic", callback_data='D')
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await query.edit_message_text(welcome_message, reply_markup=reply_markup)
-
-async def handle_stop_monitoring_button(query, user_id):
-    """Handle stop monitoring button for callback queries"""
-    global should_exit
-    if user_id in monitored_flights:
-        flight_no = monitored_flights[user_id].get('flight_no', 'Unknown')
-        del monitored_flights[user_id]
-        logger.info(f"User {user_id} stopped monitoring flight {flight_no} via button")
-
-        if not monitored_flights:
-            should_exit = True
-            logger.info("No more users monitoring flights. Setting exit flag to True.")
-
-        await query.edit_message_text(
-            f"🚫 You have stopped monitoring flight {flight_no}.\n\n"
-            "🔄 Program will now exit completely. Please restart with /start to begin again."
-        )
-    else:
-        await query.edit_message_text(
-            "❌ You are not currently monitoring any flights."
-        )
-
-async def handle_schedule_request(query, flight_type, date_str, user_id):
+async def handle_schedule_request(query, flight_type, date_str, user_id, context):
     """Handle schedule button clicks"""
     try:
+        user_language = context.user_data.get('language', 'en')
+        if user_id in monitored_flights:
+            user_language = monitored_flights[user_id].get('language', user_language)
         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
         flights = flight_bot.get_flights_by_date(date_str)
         filtered_flights = []
@@ -216,119 +288,137 @@ async def handle_schedule_request(query, flight_type, date_str, user_id):
                 filtered_flights.append(flight)
         filtered_flights = filtered_flights[:20]
         if filtered_flights:
-            message = f"📅 Flight Schedules {date_obj.strftime('%d %B %Y')}\n\n"
+            if user_language == 'id':
+                month_names = get_month_names('id')
+                date_formatted = date_obj.strftime('%d %B %Y')
+                for eng_month, ind_month in month_names.items():
+                    date_formatted = date_formatted.replace(eng_month, ind_month)
+            else:
+                date_formatted = date_obj.strftime('%d %B %Y')
+            message = f"{get_text('flight_schedules', user_language, date=date_formatted)}\n\n"
             for i, flight in enumerate(filtered_flights, 1):
                 message += f"{i}. {flight['flightno']}\n"
                 message += f"   📍 {flight['fromtolocation']}\n"
                 message += f"   🕐 {flight['schedule']}\n\n"
 
             keyboard = [
-                [InlineKeyboardButton("🔍 Search Specific Flight", callback_data=f"search_flight_{flight_type}")],
-                [InlineKeyboardButton("🏠 Back to Menu", callback_data="back_to_menu")]
+                [InlineKeyboardButton(get_text('search_specific_flight', user_language), callback_data=f"search_flight_{flight_type}")],
+                [InlineKeyboardButton(get_text('back_to_menu', user_language), callback_data="back_to_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            await query.edit_message_text(message, reply_markup=reply_markup)
+            sent_message = await safe_edit_message(query, message, reply_markup=reply_markup)
+            store_message_id(user_id, sent_message.message_id)
         else:
             keyboard = [
-                [InlineKeyboardButton("🏠 Back to Menu", callback_data="back_to_menu")]
+                [InlineKeyboardButton(get_text('back_to_menu', user_language), callback_data="back_to_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            await query.edit_message_text(
-                f"❌ No {flight_type} flights found on {date_str}.\n\n"
-                "Please check the flight type or try again later.",
+            sent_message = await safe_edit_message(
+                query,
+                f"{get_text('no_flights_found', user_language, flight_type=flight_type, date=date_str)}\n\n"
+                f"{get_text('check_flight_type', user_language)}",
                 reply_markup=reply_markup
             )
+            store_message_id(user_id, sent_message.message_id)
     except Exception as e:
         logger.error(f"Error in handle_schedule_request: {e}")
-        await query.edit_message_text("❌ Error loading flight schedules. Please try again.")
+        sent_message = await safe_edit_message(query, get_text('error_loading_schedules', user_language))
+        store_message_id(user_id, sent_message.message_id)
 
-async def handle_search_flight_request(query, flight_type, user_id):
+async def handle_search_flight_request(query, flight_type, user_id, context):
     """Handle search flight button clicks"""
+    user_language = context.user_data.get('language', 'en')
+    if user_id in monitored_flights:
+        user_language = monitored_flights[user_id].get('language', user_language)
     keyboard = [
-        [InlineKeyboardButton("🏠 Back to Menu", callback_data="back_to_menu")]
+        [InlineKeyboardButton(get_text('back_to_menu', user_language), callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(
-        f"🔍 Search for a Specific Flight\n\n"
-        f"Please enter the flight code in this format:\n"
-        f"`/flight [FLIGHT_CODE]`\n\n"
-        f"Note: The system will automatically search for today's flights.\n"
-        f"Make sure you've selected {flight_type} flight type.",
+    sent_message = await safe_edit_message(
+        query,
+        f"{get_text('search_specific_flight', user_language)}\n\n"
+        f"{get_text('enter_flight_code', user_language)}\n"
+        f"{get_text('flight_command_format', user_language)}\n\n"
+        f"{get_text('search_note', user_language)}\n"
+        f"{get_text('make_sure_selected', user_language, flight_type=flight_type)}",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
+    store_message_id(user_id, sent_message.message_id)
 
-async def handle_flight_search_result(query, flight_code, date_str, user_id, flight_type):
+async def handle_flight_search_result(query, flight_code, date_str, user_id, flight_type, context):
     """Handle flight search result button clicks"""
     try:
+        user_language = context.user_data.get('language', 'en')
+        if user_id in monitored_flights:
+            user_language = monitored_flights[user_id].get('language', user_language)
         flight_info = flight_bot.get_flight_info(flight_code, date_str)
         if flight_info:
-            status_emoji = {
-                'On Time': '✅',
-                'Delayed': '⏰',
-                'Cancelled': '❌',
-                'Departed': '🛫',
-                'Arrived': '🛬'
-            }
+            status_emoji = get_status_emoji(flight_info['flightstat'])
 
             message = f"""
-✈️ Flight Information {flight_info['flightno']}
+{get_text('flight_info_title', user_language, flight_no=flight_info['flightno'])}
 
-📅 Schedule: {flight_info['schedule']}
-⏰ Estimate: {flight_info['estimate']}
+{get_text('schedule_label', user_language)} {flight_info['schedule']}
+{get_text('estimate_label', user_language)} {flight_info['estimate']}
 
-🚪 Gate: {flight_info['gatenumber']}
-📦 Status: {status_emoji.get(flight_info['flightstat'], '')} {flight_info['flightstat']}
-📍 Route: {flight_info['fromtolocation']}
+{get_text('gate_label', user_language)} {flight_info['gatenumber']}
+{get_text('status_label', user_language)} {status_emoji} {flight_info['flightstat']}
+{get_text('route_label', user_language)} {flight_info['fromtolocation']}
             """
 
             logger.info(f"Creating monitoring button for flight: {flight_info.get('flightno')} with ID: {flight_info.get('id')}")
             keyboard = [
                 [
-                    InlineKeyboardButton("Start Monitoring 🔔", callback_data=f"monitor_{flight_info.get('id', 'unknown')}"),
-                    InlineKeyboardButton("Don't Monitor", callback_data="dont_monitor")
+                    InlineKeyboardButton(get_text('start_monitoring', user_language), callback_data=f"monitor_{flight_info.get('id', 'unknown')}"),
+                    InlineKeyboardButton(get_text('dont_monitor', user_language), callback_data="dont_monitor")
                 ],
-                [InlineKeyboardButton("🏠 Back to Menu", callback_data="back_to_menu")]
+                [InlineKeyboardButton(get_text('back_to_menu', user_language), callback_data="back_to_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            await query.edit_message_text(message, reply_markup=reply_markup)
+            sent_message = await safe_edit_message(query, message, reply_markup=reply_markup)
+            store_message_id(user_id, sent_message.message_id)
         else:
             keyboard = [
-                [InlineKeyboardButton("🔍 Search Again", callback_data=f"search_flight_{flight_type}")],
-                [InlineKeyboardButton("🏠 Back to Menu", callback_data="back_to_menu")]
+                [InlineKeyboardButton(get_text('search_again', user_language), callback_data=f"search_flight_{flight_type}")],
+                [InlineKeyboardButton(get_text('back_to_menu', user_language), callback_data="back_to_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            await query.edit_message_text(
-                f"❌ Flight {flight_code} not found for today ({date_str}).",
+            sent_message = await safe_edit_message(
+                query,
+                get_text('flight_not_found', user_language, flight_code=flight_code, date=date_str),
                 reply_markup=reply_markup
             )
+            store_message_id(user_id, sent_message.message_id)
     except Exception as e:
         logger.error(f"Error in handle_flight_search_result: {e}")
-        await query.edit_message_text("❌ Error loading flight information. Please try again.")
+        sent_message = await safe_edit_message(query, get_text('error_loading_flight_info', user_language))
+        store_message_id(user_id, sent_message.message_id)
 
 async def flight_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_language = context.user_data.get('language', 'en')
     if is_user_monitoring(user_id):
         await update.message.reply_text(
-            "⚠️ You are currently monitoring a flight. Please stop monitoring first using /stop_monitor before searching for other flights."
+            get_text('currently_monitoring', user_language)
         )
         return
     flight_type = context.user_data.get('flight_type', None)
     if flight_type is None:
         await update.message.reply_text(
-            "❌ You need to select a flight type first! Please choose from Domestic or International by typing /start."
+            get_text('select_flight_type_first', user_language)
         )
         return
 
     if len(context.args) != 1:
         await update.message.reply_text(
-            "❌ Incorrect format!\n\n"
-            "Use: /flight [Flight_Code]"
+            f"{get_text('incorrect_format', user_language)}\n\n"
+            f"{get_text('use_flight_format', user_language)}"
         )
         return
 
@@ -339,69 +429,64 @@ async def flight_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if flight_info:
         if (flight_type == 'D' and not flight_info['departure'].startswith('I')) or (flight_type == 'I' and flight_info['departure'].startswith('I')):
-            status_emoji = {
-                'On Time': '✅',
-                'Delayed': '⏰',
-                'Cancelled': '❌',
-                'Departed': '🛫',
-                'Arrived': '🛬'
-            }
+            status_emoji = get_status_emoji(flight_info['flightstat'])
 
             message = f"""
-            ✈️ Flight Information {flight_info['flightno']}
+{get_text('flight_info_title', user_language, flight_no=flight_info['flightno'])}
 
-            📅 Schedule: {flight_info['schedule']}
-            ⏰ Estimate: {flight_info['estimate']}
+{get_text('schedule_label', user_language)} {flight_info['schedule']}
+{get_text('estimate_label', user_language)} {flight_info['estimate']}
 
-            🚪 Gate: {flight_info['gatenumber']}
-            📦 Status: {status_emoji.get(flight_info['flightstat'], '')} {flight_info['flightstat']}
-            📍 Route: {flight_info['fromtolocation']}
+{get_text('gate_label', user_language)} {flight_info['gatenumber']}
+{get_text('status_label', user_language)} {status_emoji} {flight_info['flightstat']}
+{get_text('route_label', user_language)} {flight_info['fromtolocation']}
             """
             await update.message.reply_text(message)
 
             logger.info(f"Creating monitoring button for flight: {flight_info.get('flightno')} with ID: {flight_info.get('id')}")
             keyboard = [
                 [
-                    InlineKeyboardButton("Start Monitoring 🔔", callback_data=f"monitor_{flight_info.get('id', 'unknown')}"),
-                    InlineKeyboardButton("Don't Monitor", callback_data="dont_monitor")
+                    InlineKeyboardButton(get_text('start_monitoring', user_language), callback_data=f"monitor_{flight_info.get('id', 'unknown')}"),
+                    InlineKeyboardButton(get_text('dont_monitor', user_language), callback_data="dont_monitor")
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(
-                "Would you like to monitor the status of this flight? You will receive updates if the status changes 😉\n\n",
+                f"{get_text('would_you_like_monitor', user_language)}\n\n",
                 reply_markup=reply_markup
             )
         else:
-            flight_type_name = "Domestic" if flight_info['departure'].startswith ('D') else "International"
-            actual_type = "International" if flight_info['departure'].startswith('I') else "Domestic"
+            flight_type_name = get_text('domestic', user_language) if flight_info['departure'].startswith ('D') else get_text('international', user_language)
+            actual_type = get_text('international', user_language) if flight_info['departure'].startswith('I') else get_text('domestic', user_language)
             await update.message.reply_text(
                 f"❌ Flight {flight_code} is a {actual_type} flight, but you selected {flight_type_name} flights.\n\n"
-                "Please use /start command again and choose the correct flight type."
+                f"{get_text('select_flight_type_first', user_language)}"
             )
             return
     else:
         await update.message.reply_text(
-            f"❌ Flight {flight_code} not found for today ({date_str})."
+            get_text('flight_not_found', user_language, flight_code=flight_code, date=date_str)
         )
 
 async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_language = context.user_data.get('language', 'en')
     if is_user_monitoring(user_id):
         await update.message.reply_text(
-            "⚠️ You are currently monitoring a flight. Please stop monitoring first using /stop_monitor before viewing schedules."
+            get_text('currently_monitoring', user_language)
         )
         return
     if len(context.args) != 1:
         await update.message.reply_text(
-            "❌ Incorrect format!\n\n"
-            "Use: /schedule [date]"
+            f"{get_text('incorrect_format', user_language)}\n\n"
+            f"Use: /schedule [date]"
         )
         return
 
     flight_type = context.user_data.get('flight_type', None)
     if flight_type is None:
         await update.message.reply_text(
-            "❌ You need to select a flight type first! Please choose from Domestic or International by typing /start."
+            get_text('select_flight_type_first', user_language)
         )
         return
 
@@ -410,12 +495,12 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
     except ValueError:
         await update.message.reply_text(
-            "❌ Incorrect date format!\n\n"
-            "Use format: YYYY-MM-DD"
+            f"{get_text('incorrect_format', user_language)}\n\n"
+            f"Use format: YYYY-MM-DD"
         )
         return
 
-    await update.message.reply_text("🔍 Searching for Flight Schedules...")
+    await update.message.reply_text(get_text('searching_schedules', user_language))
     flights = flight_bot.get_flights_by_date(date_str)
 
     filtered_flights = []
@@ -426,7 +511,14 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filtered_flights = filtered_flights[:20]
 
     if filtered_flights:
-        message = f"📅 Flight Schedules {date_obj.strftime('%d %B %Y')}\n\n"
+        if user_language == 'id':
+            month_names = get_month_names('id')
+            date_formatted = date_obj.strftime('%d %B %Y')
+            for eng_month, ind_month in month_names.items():
+                date_formatted = date_formatted.replace(eng_month, ind_month)
+        else:
+            date_formatted = date_obj.strftime('%d %B %Y')
+        message = f"{get_text('flight_schedules', user_language, date=date_formatted)}\n\n"
         for i, flight in enumerate(filtered_flights, 1):
             message += f"{i}. *{flight['flightno']}*\n"
             message += f"   📍 {flight['fromtolocation']}\n"
@@ -434,78 +526,112 @@ async def schedule_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message)
     else:
         await update.message.reply_text(
-            f"❌ No flights of type {flight_type} on {date_str}."
+            get_text('no_flights_type', user_language, flight_type=flight_type, date=date_str)
         )
 
 async def stop_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_language = context.user_data.get('language', 'en')
     if user_id in monitored_flights:
         flight_no = monitored_flights[user_id].get('flight_no', 'Unknown')
         del monitored_flights[user_id]
         logger.info(f"User {user_id} manually stopped monitoring flight {flight_no}")
         await update.message.reply_text(
-            f"🚫 You have stopped monitoring flight {flight_no}.\n\n"
-            "✅ You can now use all bot commands again. Type /start to begin."
+            f"{get_text('monitoring_stopped', user_language, flight_no=flight_no)}\n\n"
+            f"{get_text('can_use_commands', user_language)}"
         )
     else:
         await update.message.reply_text(
-            "❌ You are not currently monitoring any flights."
+            get_text('not_monitoring_any', user_language)
         )
 
 async def debug_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Debug command to check monitoring status"""
     user_id = update.effective_user.id
+    user_language = context.user_data.get('language', 'en')
 
-    debug_message = "🔍 Debug Information\n\n"
-    debug_message += f"Your User ID: `{user_id}`\n"
-    debug_message += f"Total Monitored Flights: {len(monitored_flights)}\n\n"
+    debug_message = f"{get_text('debug_info', user_language)}\n\n"
+    debug_message += f"{get_text('your_user_id', user_language)} `{user_id}`\n"
+    debug_message += f"{get_text('total_monitored', user_language)} {len(monitored_flights)}\n\n"
 
     if user_id in monitored_flights:
         flight_data = monitored_flights[user_id]
-        debug_message += "✅ *You are monitoring:*\n"
+        debug_message += f"{get_text('you_are_monitoring', user_language)}\n"
         debug_message += f"Flight: {flight_data['flight_no']}\n"
-        debug_message += f"Flight ID: {flight_data['flight_id']}\n"
+        debug_message += f"{get_text('flight_id', user_language)} {flight_data['flight_id']}\n"
         debug_message += f"Last Status: {flight_data['last_status']}\n"
         debug_message += f"Last Schedule: {flight_data['last_schedule']}\n"
         debug_message += f"Last Estimate: {flight_data['last_estimate']}\n"
-        debug_message += f"Notifications Sent: {flight_data.get('notification_count', 0)}\n"
-        debug_message += f"Checks Performed: {flight_data.get('check_count', 0)}\n"
-        debug_message += f"Last Seen: {flight_data.get('last_seen', 'N/A')}\n\n"
+        debug_message += f"{get_text('notifications_sent', user_language)} {flight_data.get('notification_count', 0)}\n"
+        debug_message += f"{get_text('checks_performed', user_language)} {flight_data.get('check_count', 0)}\n"
+        debug_message += f"{get_text('last_seen', user_language)} {flight_data.get('last_seen', 'N/A')}\n\n"
         try:
             current_flight = flight_bot.get_flight_info_by_id(flight_data['flight_id'])
             if current_flight:
-                debug_message += "✅ Live API Check: SUCCESS\n"
+                debug_message += f"✅ {get_text('live_api_check', user_language)} {get_text('success', user_language)}\n"
                 debug_message += f"Current Status: {current_flight['flightstat']}\n"
                 debug_message += f"Current Schedule: {current_flight['schedule']}\n"
                 debug_message += f"Current Estimate: {current_flight['estimate']}\n"
             else:
-                debug_message += "❌ Live API Check: FLIGHT NOT FOUND\n"
+                debug_message += f"❌ {get_text('live_api_check', user_language)} {get_text('flight_not_found_debug', user_language)}\n"
         except Exception as e:
-            debug_message += f"❌ Live API Check: ERROR - {str(e)}*\n"
+            debug_message += f"❌ {get_text('live_api_check', user_language)} {get_text('error', user_language)} - {str(e)}*\n"
     else:
-        debug_message += "❌ You are not monitoring any flights\n"
+        debug_message += f"{get_text('not_monitoring_debug', user_language)}\n"
 
-    debug_message += f"\nAll Monitored Users: {list(monitored_flights.keys())}"
+    debug_message += f"\n{get_text('all_monitored_users', user_language)} {list(monitored_flights.keys())}"
 
     await update.message.reply_text(debug_message)
 
 async def test_notification(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test notification sending"""
     user_id = update.effective_user.id
+    user_language = context.user_data.get('language', 'en')
 
     try:
         await update.message.reply_text(
-            "🧪 Test Notification\n\n"
-            "✅ Bot can send messages successfully!\n"
-            f"Your User ID: {user_id}\n"
-            f"Message sent at: {datetime.now().strftime('%H:%M:%S')}"
+            f"{get_text('test_notification', user_language)}\n\n"
+            f"{get_text('bot_can_send', user_language)}\n"
+            f"{get_text('your_user_id', user_language)} {user_id}\n"
+            f"{get_text('message_sent_at', user_language)} {datetime.now().strftime('%H:%M:%S')}"
         )
         logger.info(f"Test notification sent successfully to user {user_id}")
     except Exception as e:
         logger.error(f"Failed to send test notification to user {user_id}: {e}")
         await update.message.reply_text(
-            f"❌ Failed to send notification: {str(e)}"
+            f"{get_text('failed_to_send', user_language)} {str(e)}"
         )
+
+async def change_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Change user's language preference"""
+    user_id = update.effective_user.id
+    user_language = context.user_data.get('language', 'en')
+
+    await auto_delete_previous_message(update.get_bot(), user_id)
+
+    if is_user_monitoring(user_id):
+        sent_message = await update.message.reply_text(
+            get_text('currently_monitoring', user_language)
+        )
+        store_message_id(user_id, sent_message.message_id)
+        return
+
+    welcome_message = f"""
+{get_text('welcome_title', user_language)}
+
+{get_text('welcome_subtitle', user_language)}
+
+{get_text('select_language', user_language)}
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton("🇺🇸 English", callback_data='lang_en'),
+            InlineKeyboardButton("🇮🇩 Bahasa Indonesia", callback_data='lang_id')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    sent_message = await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+    store_message_id(user_id, sent_message.message_id)
 
 def normalize_value(value):
     if value is None:
@@ -515,46 +641,33 @@ def normalize_value(value):
     except Exception:
         return str(value)
 
-
 def safe_string_compare(val1, val2):
     """Safely compare two values as trimmed strings, handling None values"""
     str1 = normalize_value(val1)
     str2 = normalize_value(val2)
     return str1 == str2
 
-
 def normalize_status(value):
     v = normalize_value(value)
     return v.lower() if isinstance(v, str) else v
 
-def format_flight_status_message(flight_data, changes=None):
+def format_flight_status_message(flight_data, changes=None, language='en'):
     """Format flight status message with current data"""
-    status_emoji = {
-        'On Time': '✅',
-        'Delayed': '⏰',
-        'Cancelled': '❌',
-        'Departed': '🛫',
-        'Arrived': '🛬',
-        'Gate Close': '🚪',
-        'Boarding': '🎫',
-        'Check-in': '📋'
-    }
+    status_emoji = get_status_emoji(flight_data['flightstat'])
 
-    message = f"✈️ Flight {flight_data['flightno']} Status*\n\n"
-    message += f"🏢 Operator: {flight_data['operator']}\n"
-    message += f"📅 Schedule: {flight_data['schedule']}\n"
-    message += f"⏰ Estimate: {flight_data['estimate']}\n"
-    message += f"🚪 Gate: {flight_data['gatenumber']}\n"
-    message += f"📦 Status: {status_emoji.get(flight_data['flightstat'], '📊')} {flight_data['flightstat']}\n"
-    message += f"📍 Route: {flight_data['fromtolocation']}\n"
-
+    message = f"✈️ {get_text('flight_info_title', language, flight_no=flight_data['flightno'])} Status*\n\n"
+    message += f"{get_text('schedule_label', language)} {flight_data['schedule']}\n"
+    message += f"{get_text('estimate_label', language)} {flight_data['estimate']}\n"
+    message += f"{get_text('gate_label', language)} {flight_data['gatenumber']}\n"
+    message += f"{get_text('status_label', language)} {status_emoji} {flight_data['flightstat']}\n"
+    message += f"{get_text('route_label', language)} {flight_data['fromtolocation']}\n"
 
     if changes:
-        message += f"\n🔄 *Recent Changes:*\n"
+        message += f"\n{get_text('recent_changes', language)}\n"
         for change in changes:
             message += f"• {change}\n"
 
-    message += f"\n🕐 *Last Updated:* {datetime.now().strftime('%H:%M:%S')}"
+    message += f"\n{get_text('last_updated', language, time=datetime.now().strftime('%H:%M:%S'))}"
 
     return message
 
@@ -596,14 +709,15 @@ async def monitor_flight_status(application=None):
                                     except Exception as delete_error:
                                         logger.warning(f"Could not delete previous message {last_message_id} for user {user_id}: {delete_error}")
 
+                                user_lang = monitoring_data.get('language', 'en')
                                 sent_message = await bot.send_message(
                                     chat_id=user_id,
                                     text=(
-                                        f"⚠️ Flight {monitoring_data['flight_no']} (ID: {flight_id}) is temporarily unavailable from the API.\n\n"
-                                        f"📊 Last known status: {monitoring_data['last_status']}\n"
-                                        f"⏰ Last schedule: {monitoring_data['last_schedule']}\n"
-                                        f"🕐 Last estimate: {monitoring_data['last_estimate']}\n\n"
-                                        f"🔁 Monitoring will continue and retry automatically."
+                                        f"{get_text('flight_unavailable', user_lang, flight_no=monitoring_data['flight_no'], flight_id=flight_id)}\n\n"
+                                        f"{get_text('last_known_status', user_lang)} {monitoring_data['last_status']}\n"
+                                        f"{get_text('last_schedule', user_lang)} {monitoring_data['last_schedule']}\n"
+                                        f"{get_text('last_estimate', user_lang)} {monitoring_data['last_estimate']}\n\n"
+                                        f"{get_text('monitoring_continue', user_lang)}"
                                     ),
                                     parse_mode='Markdown'
                                 )
@@ -665,11 +779,12 @@ async def monitor_flight_status(application=None):
                                 except Exception as delete_error:
                                     logger.warning(f"Could not delete previous message {last_message_id} for user {user_id}: {delete_error}")
 
-                            notification_message = f"🚨 Flight Update Alert!\n\n"
-                            notification_message += format_flight_status_message(current_flight, changes)
+                            user_lang = monitoring_data.get('language', 'en')
+                            notification_message = f"{get_text('flight_update_alert', user_lang)}\n\n"
+                            notification_message += format_flight_status_message(current_flight, changes, user_lang)
 
                             keyboard = [
-                                [InlineKeyboardButton("🚫 Stop Monitoring", callback_data="stop_monitoring")]
+                                [InlineKeyboardButton(get_text('stop_monitoring', user_lang), callback_data=f"stop_monitor_{flight_id}")]
                             ]
                             reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -698,7 +813,7 @@ async def monitor_flight_status(application=None):
                     else:
                         monitored_flights[user_id]['last_seen'] = datetime.now()
 
-                    final_statuses = ['Gate Close']
+                    final_statuses = ['Departed, Gate Close']
                     if current_status in final_statuses:
                         if bot and not monitoring_data.get('final_notified'):
                             try:
@@ -710,14 +825,15 @@ async def monitor_flight_status(application=None):
                                     except Exception as delete_error:
                                         logger.warning(f"Could not delete previous message {last_message_id} for user {user_id}: {delete_error}")
 
-                                final_message = f"🏁 Flight {current_flight['flightno']} - Final Status\n\n"
-                                final_message += format_flight_status_message(current_flight)
+                                user_lang = monitoring_data.get('language', 'en')
+                                final_message = f"{get_text('final_status', user_lang, flight_no=current_flight['flightno'])}\n\n"
+                                final_message += format_flight_status_message(current_flight, language=user_lang)
                                 final_message += (
-                                    f"\n\n✅ Flight has reached final status ({current_status}). Monitoring has been automatically stopped.\n"
-                                    f"🔄 Program will now exit completely. Please restart with /start to begin again."
+                                    f"\n\n{get_text('reached_final_status', user_lang, status=current_status)}\n"
+                                    f"{get_text('program_exit', user_lang)}"
                                 )
                                 keyboard = [
-                                    [InlineKeyboardButton("🚫 Stop Monitoring", callback_data="stop_monitoring")]
+                                    [InlineKeyboardButton(get_text('stop_monitoring', user_lang), callback_data=f"stop_monitor_{flight_id}")]
                                 ]
                                 reply_markup = InlineKeyboardMarkup(keyboard)
                                 await bot.send_message(

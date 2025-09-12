@@ -5,7 +5,7 @@ import time
 from dotenv import load_dotenv
 from uvicorn import Config, Server
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
-from flight_handler import (start, flight_info, schedule_info, button, stop_monitor, monitor_flight_status, debug_monitor, test_notification, should_exit)
+from flight_handler import (start, flight_info, schedule_info, button, stop_monitor, monitor_flight_status, debug_monitor, test_notification, should_exit, change_language)
 from config import BOT_TOKEN, LOG_LEVEL
 from health import app as health_app
 
@@ -47,6 +47,7 @@ def main():
     application.add_handler(CommandHandler("stop_monitor", stop_monitor))
     application.add_handler(CommandHandler("debug", debug_monitor))
     application.add_handler(CommandHandler("test", test_notification))
+    application.add_handler(CommandHandler("language", change_language))
     application.add_handler(CallbackQueryHandler(button))
 
     logger.info("Starting flight monitoring thread...")
